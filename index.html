@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <!-- Required meta tags -->
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+    integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
+    crossorigin=""/>
+
+  <style media="screen">
+    body { font-family: sans-serif; max-width: 52em; margin: 0 auto; padding: 1em; }
+    input, button { font-size: 12pt; margin: 1em auto; }
+    thead th { vertical-align: top; }
+    th, td { padding: 0.25em; text-align: right; }
+    label { display: block; margin: 0.5em; cursor: pointer; }
+    #map { height: 30em; width: 100%; margin: auto; }
+    #position-log { margin-top: 1em; width: 100%; overflow: scroll; }
+    #position-log table { border: 1px #ccc solid; }
+  </style>
+
+  <title>Geolocation Device Test</title>
+</head>
+
+<body>
+  <main>
+    <h1>Geolocation Device Test</h1>
+    <p>
+      To test the <a href="https://developer.mozilla.org/en-US/docs/Web/API/Geolocation_API/Using_the_Geolocation_API">Geolocation API</a>.
+      This page does not transmit any data except to request tiles from mapbox.com.
+    </p>
+    <form id="geolocate">
+      <button type="button" name="getLocation">
+        Get Location
+      </button>
+      <button type="button" name="trackLocation">
+        Start Tracking Location
+      </button>
+      <details>
+        <summary>Options</summary>
+        <fieldset name="options">
+          <label for="enableHighAccuracy">
+            enableHighAccuracy
+            <input type="checkbox" name="enableHighAccuracy" id="enableHighAccuracy">
+          </label>
+          <label for="timeout">
+            timeout (ms)
+            <input type="number" name="timeout" id="timeout" placeholder="Infinity">
+          </label>
+          <label for="maximumAge">
+            maximumAge (ms)
+            <input type="number" name="maximumAge" id="maximumAge" placeholder="0">
+          </label>
+        </fieldset>
+      </details>
+    </form>
+    <p id="page-status">
+      <script>document.write('Initialising…')</script>
+      <noscript>JavaScript required.</noscript>
+    </p>
+    <div id="map"></div>
+    <div id="position-log">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Age</th>
+            <th>Accuracy <small>(P=95%)</small></th>
+            <th>Latitude</th>
+            <th>Longitude</th>
+            <th>Altitude (m)</th>
+            <th>Altitude Accuracy <small>(P=95%)</small></th>
+            <th>Heading</th>
+            <th>Speed</th>
+          </tr>
+        </thead>
+        <tbody id="positions">
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"
+   integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="
+   crossorigin=""></script>
+
+  <script type="text/javascript">
+    var myMap
+    var lastCircle
+    var watchId
+    var requestedAt
+    var statusSpan = document.getElementById('page-status')
+    var form = document.forms['geolocate']
+    var getLocationBtn = form.getLocation
+    var trackLocationBtn = form.trackLocation
+    var positionTable = document.getElementById('positions')
+
+    // Trigger one-off request for device location
+    function getLocation() {
+      requestedAt = new Date()
+      navigator.geolocation.getCurrentPosition(processLocation, handleLocationError, getPositionOptions())
+      setStatus('Locating…')
+    }
+
+    // Toggle a position 'watch'
+    function toggleLocationTracking() {
+      if (watchId == null) {
+        watchId = navigator.geolocation.watchPosition(processLocation, handleLocationError, getPositionOptions())
+        trackLocationBtn.innerText = 'Stop Tracking Location'
+        setStatus('Locating…')
+      } else {
+        navigator.geolocation.clearWatch(watchId);
+        trackLocationBtn.innerText = 'Start Tracking Location'
+        setStatus('Ready')
+        watchId = null
+      }
+    }
+
+    function processLocation(position) {
+      var age = new Date() - position.timestamp
+      var time = requestedAt ? new Date() - requestedAt : null
+      requestedAt = null
+
+      console.log(position)
+      mapCoordinates(position.coords)
+      positionTable.insertAdjacentHTML('afterbegin', buildLocationRow(position.coords, age, time))
+      setStatus('Located as at ' + new Date(position.timestamp))
+    }
+
+    function handleLocationError(error) {
+      console.error(error);
+      setStatus('Error getting location (' + error.message + ')');
+    }
+
+    function buildLocationRow(coords, age, time) {
+      return "<tr>" +
+        "<td>" + (time ? time + '&nbsp;ms' : '-' ) + "</td>" +
+        "<td>" + age + "&nbsp;ms</td>" +
+        "<td>" + Math.round(coords.accuracy) + "&nbsp;m</td>" +
+        "<td>" + coords.latitude + "</td>" +
+        "<td>" + coords.longitude + "</td>" +
+        "<td>" + coords.altitude + "&nbsp;m</td>" +
+        "<td>" + Math.round(coords.altitudeAccuracy) + "&nbsp;m</td>" +
+        "<td>" + coords.heading + "º</td>" +
+        "<td>" + coords.speed + "&nbsp;m/s</td>" +
+        "</tr>"
+    }
+
+    function initialiseMap() {
+      myMap = L.map('map');
+      L.tileLayer('https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}@2x.png?access_token={accessToken}', {
+        attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors, <a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
+        maxZoom: 20,
+        id: 'mapbox.satellite',
+        accessToken: 'pk.eyJ1IjoiZGFuaWVsZm9uZSIsImEiOiJjam5wNG1zMXoxYWtpM3dueHo5bWNpMng1In0.KcFYPss4RkOudvf-fNMs0g'
+      }).addTo(myMap);
+    }
+
+    function mapCoordinates(coords) {
+      if (lastCircle) lastCircle.remove();
+      var bounds = L.latLng(coords.latitude, coords.longitude).toBounds(coords.accuracy);
+      myMap.fitBounds(bounds, { padding: [10, 10] });
+      lastCircle = L.circle([coords.latitude, coords.longitude], {
+        color: 'blue',
+        fillColor: '#03f',
+        fillOpacity: 0.25,
+        radius: coords.accuracy / 2
+      }).addTo(myMap);
+    }
+
+    function setStatus(text) { statusSpan.innerText = text }
+
+    // Convert form data into a PositionOptions object
+    function getPositionOptions() {
+      var opts = {}
+      opts.enableHighAccuracy = form.enableHighAccuracy.checked
+      if (val = form.timeout.value) opts.timeout = +val
+      if (val = form.maximumAge.value) opts.maximumAge = +val
+      console.log('PositionOptions', opts)
+      return opts
+    }
+
+    if(!navigator.geolocation) {
+      setStatus('Geolocation is not available on this device')
+    } else {
+      initialiseMap()
+      getLocationBtn.addEventListener('click', getLocation)
+      trackLocationBtn.addEventListener('click', toggleLocationTracking)
+      setStatus('Ready')
+    }
+  </script>
+  <iframe src="" frameborder="0"></iframe>
+</body>
+</html>
